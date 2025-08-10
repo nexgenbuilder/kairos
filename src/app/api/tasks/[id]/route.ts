@@ -7,7 +7,7 @@ const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 /** GET /api/tasks/[id] */
 export async function GET(_req: Request, { params }: Ctx) {
   const { id } = params;
-  const { rows } = await q(
+  const rows = await q(
     `
     SELECT
       id,
@@ -53,7 +53,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (s === 'inactive' || s === 'active' || s === 'completed') status = s as any;
   }
 
-  const { rows } = await q(
+  const rows = await q(
     `
     UPDATE tasks
     SET
@@ -89,8 +89,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
 /** DELETE /api/tasks/[id] */
 export async function DELETE(_req: Request, { params }: Ctx) {
   const { id } = params;
-  const { rowCount } = await q(`DELETE FROM tasks WHERE id = $1`, [id]);
-  return rowCount ? NextResponse.json({ ok: true }) : NextResponse.json({ error: 'not found' }, { status: 404 });
+  const rows = await q(`DELETE FROM tasks WHERE id = $1 RETURNING id`, [id]);
+  return rows[0]
+    ? NextResponse.json({ ok: true })
+    : NextResponse.json({ error: 'not found' }, { status: 404 });
 }
 
 
