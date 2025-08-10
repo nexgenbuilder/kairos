@@ -8,13 +8,8 @@ const pool = new Pool({
     : false as any
 });
 
-// Support both: q`select ... ${x}`  and  q('select ... $1', [x])
-type Q = {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<any[]>;
-  (text: string, params?: any[]): Promise<any[]>;
-};
-
-export const q: Q = (async (strings: any, ...values: any[]) => {
+// Support both: q`select ... ${x}` and q('select ... $1', [x])
+export async function q(strings: TemplateStringsArray | string, ...values: any[]): Promise<any[]> {
   let text: string;
   let params: any[] = [];
 
@@ -36,9 +31,9 @@ export const q: Q = (async (strings: any, ...values: any[]) => {
     params = (values && values[0]) || [];
   }
 
-  const { rows } = await pool.query(text, params);
-  return rows;
-}) as Q;
+  const res = await pool.query(text, params);
+  return res.rows;
+}
 
 
 
