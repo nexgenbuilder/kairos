@@ -3,7 +3,11 @@ export function toJSONSafe<T = any>(input: T): T {
     if (input === null || input === undefined) return input as any;
   
     const t = typeof input;
-    if (t === 'bigint') return Number(input) as any;
+    // Preserve BigInt precision: use a number when safe, otherwise stringify
+    if (t === 'bigint') {
+      const num = Number(input);
+      return Number.isSafeInteger(num) ? (num as any) : (input.toString() as any);
+    }
     if (t !== 'object') return input;
   
     if (input instanceof Date) return input.toISOString() as any;
