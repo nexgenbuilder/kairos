@@ -1,0 +1,1 @@
+export default function ContentPage(){return (<div className='rounded-xl border bg-white p-4'><h1 className='text-2xl font-bold mb-2'>Content</h1><p>Scaffold: connect to your database for content next.</p></div>)}
