@@ -2,18 +2,7 @@
 
 import useSWR from 'swr';
 import { useState } from 'react';
-
-type Task = {
-  id: string;
-  title: string;
-  description: string | null;
-  category_id: string | null;
-  priority: 'low' | 'medium' | 'high' | null;
-  status?: 'inactive' | 'active' | 'completed';
-  created_at: string;
-  activated_at: string | null;
-  completed_at: string | null;
-};
+import type { Task } from '@/types';
 
 const fetcher = (u: string) => fetch(u).then(r => r.json());
 
@@ -23,8 +12,8 @@ export default function TasksPage() {
     title: '',
     description: '',
     category_id: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    status: 'inactive' as 'inactive' | 'active' | 'completed',
+    priority: 'medium' as Task['priority'],
+    status: 'inactive' as Task['status'],
   });
 
   async function addTask(e: React.FormEvent) {
@@ -49,7 +38,7 @@ export default function TasksPage() {
     }
   }
 
-  async function setStatus(id: string, status: 'inactive' | 'active' | 'completed') {
+  async function setStatus(id: string, status: Task['status']) {
     const prev = data || [];
     mutate(
       prev.map(t => (t.id === id ? { ...t, status } : t)),

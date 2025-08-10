@@ -3,33 +3,56 @@ import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
 import { toJSONSafe } from '@/lib/json';
 
+const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
+const ALLOWED_STATUS = new Set(['inactive', 'active', 'completed']);
+
 // GET /api/tasks  -> returns an array of tasks (JSON serializable)
 export async function GET() {
-  // keep it simple; the UI can compute metrics for now
-  const rows = await q`select * from tasks order by created_at desc`;
+  const rows = await q`
+    SELECT
+      id,
+      title,
+      description,
+      category_id,
+      priority,
+      status_select AS status,
+      created_at,
+      activated_at,
+      completed_at
+    FROM tasks
+    ORDER BY created_at DESC
+  `;
   return NextResponse.json(toJSONSafe(rows));
 }
 
 // POST /api/tasks  -> create a task and return the created row
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const {
-    title,
-    status = 'active',         // 'inactive' | 'active' | 'completed' | 'abandoned'
-    category = null,           // text
-    notes = null,              // text
-    started_at = null,         // ISO string or null
-    completed_at = null,       // ISO string or null
-  } = body ?? {};
+  let { title, description = null, category_id = null, priority = 'medium', status = 'inactive' } = body ?? {};
 
   if (!title || String(title).trim() === '') {
     return NextResponse.json({ error: 'Title is required' }, { status: 400 });
   }
 
+  priority = String(priority).toLowerCase();
+  if (!ALLOWED_PRIORITY.has(priority)) priority = 'medium';
+
+  status = String(status).toLowerCase();
+  if (!ALLOWED_STATUS.has(status)) status = 'inactive';
+
   const rows = await q`
-    insert into tasks (title, status, category, notes, started_at, completed_at)
-    values (${title}, ${status}, ${category}, ${notes}, ${started_at}, ${completed_at})
-    returning *
+    INSERT INTO tasks (title, description, category_id, priority, status_select)
+    VALUES (${title}, ${description}, ${category_id}, ${priority}, ${status})
+    RETURNING
+      id,
+      title,
+      description,
+      category_id,
+      priority,
+      status_select AS status,
+      created_at,
+      activated_at,
+      completed_at
   `;
 
   return NextResponse.json(toJSONSafe(rows[0]));
