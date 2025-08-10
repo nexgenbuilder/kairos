@@ -7,7 +7,7 @@ const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 /** GET /api/tasks/[id] */
 export async function GET(_req: Request, { params }: Ctx) {
   const { id } = params;
-  const { rows } = await q(
+  const rows = await q(
     `
     SELECT
       id,
@@ -53,7 +53,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (s === 'inactive' || s === 'active' || s === 'completed') status = s as any;
   }
 
-  const { rows } = await q(
+  const rows = await q(
     `
     UPDATE tasks
     SET
