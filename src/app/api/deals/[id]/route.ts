@@ -12,8 +12,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
     'name',
     'amount',
     'actual_amount',
+    'probability',
     'stage',
     'expected_close_at',
+    'heat',
     'notes',
   ];
 
@@ -23,8 +25,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   for (const key of fields) {
     if (body[key] !== undefined) {
-      sets.push(`${key} = $${i++}`);
-      vals.push(body[key]);
+      if (key === 'stage') {
+        // Stage updates may adjust won_at automatically
+        sets.push(`stage = $${i}`);
+        vals.push(body[key]);
+        i++;
+        if (body[key] === 'won') {
+          sets.push(`won_at = NOW()`);
+        } else if (body[key] !== 'won') {
+          sets.push(`won_at = NULL`);
+        }
+      } else {
+        sets.push(`${key} = $${i++}`);
+        vals.push(body[key]);
+      }
     }
   }
 
