@@ -52,6 +52,8 @@ type Deal = {
   won_at: string | null;
   heat?: 'cold' | 'warm' | 'hot' | 'on_hold';
   created_at: string;
+  updated_at: string;
+  notes: string | null;
 };
 
 /* =======================
@@ -130,16 +132,18 @@ export default function ProspectsPage() {
     probability: '0.30',
     expected_close_at: '',
     heat: 'warm' as 'cold' | 'warm' | 'hot' | 'on_hold',
+    notes: '',
   });
 
   // inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [edit, setEdit] = useState<{ name: string; amount: string; probability: string; expected_close_at: string; heat: Deal['heat'] }>({
+  const [edit, setEdit] = useState<{ name: string; amount: string; probability: string; expected_close_at: string; heat: Deal['heat']; notes: string }>({
     name: '',
     amount: '',
     probability: '0.30',
     expected_close_at: '',
     heat: 'warm',
+    notes: '',
   });
 
   // metrics
@@ -263,6 +267,7 @@ export default function ProspectsPage() {
       probability: Math.max(0, Math.min(1, Number(dForm.probability) || 0)),
       expected_close_at: toISOOrNull(dForm.expected_close_at) as string | null,
       heat: dForm.heat,
+      notes: dForm.notes || null,
     };
 
     const res = await fetch('/api/deals', {
@@ -276,7 +281,7 @@ export default function ProspectsPage() {
       alert('Deal create failed: ' + msg);
       return;
     }
-    setDForm({ prospect_id: '', name: '', amount: '', probability: '0.30', expected_close_at: '', heat: 'warm' });
+    setDForm({ prospect_id: '', name: '', amount: '', probability: '0.30', expected_close_at: '', heat: 'warm', notes: '' });
     await refreshDeals();
   }
 
@@ -288,6 +293,7 @@ export default function ProspectsPage() {
       probability: String(d.probability),
       expected_close_at: d.expected_close_at ? d.expected_close_at.slice(0, 16) : '',
       heat: d.heat ?? 'warm',
+      notes: d.notes || '',
     });
   }
 
@@ -301,6 +307,7 @@ export default function ProspectsPage() {
         probability: Math.max(0, Math.min(1, Number(edit.probability) || 0)),
         expected_close_at: toISOOrNull(edit.expected_close_at),
         heat: edit.heat,
+        notes: edit.notes || null,
       }),
     });
     if (!res.ok) {
@@ -446,6 +453,7 @@ export default function ProspectsPage() {
                 <option value="hot">Hot</option>
                 <option value="on_hold">On hold</option>
               </select>
+              <input className="rounded border p-2 md:col-span-6" placeholder="Notes" value={dForm.notes} onChange={e=>setDForm({...dForm, notes:e.target.value})}/>
               <button className="rounded bg-black px-4 py-2 text-white md:col-span-6">Add Deal</button>
             </form>
 
@@ -469,6 +477,7 @@ export default function ProspectsPage() {
                           <option value="hot">Hot</option>
                           <option value="on_hold">On hold</option>
                         </select>
+                        <input className="rounded border p-2 md:col-span-6" placeholder="Notes" value={edit.notes} onChange={e=>setEdit({...edit, notes:e.target.value})}/>
                         <div className="md:col-span-6 flex gap-2">
                           <button type="button" className="rounded border px-3 py-1" onClick={()=>saveEdit(d.id)}>Save</button>
                           <button type="button" className="rounded border px-3 py-1" onClick={()=>{setEditingId(null);}}>Cancel</button>
@@ -489,6 +498,7 @@ export default function ProspectsPage() {
                             {d.won_at ? ` • won ${fmt(d.won_at)}` : ''}
                             {d.actual_amount != null ? ` • actual ${money(d.actual_amount)}` : ''}
                           </div>
+                          {d.notes ? <div className="text-xs text-gray-700 mt-1">{d.notes}</div> : null}
                         </div>
                         <div className="flex gap-2">
                           <button type="button" className="rounded border px-2" onClick={()=>startEdit(d)}>Edit</button>
