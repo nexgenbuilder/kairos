@@ -4,10 +4,13 @@ import useSWR from 'swr';
 import { useState } from 'react';
 import type { Task } from '@/types';
 
+type Category = { id: string; name: string };
+
 const fetcher = (u: string) => fetch(u).then(r => r.json());
 
 export default function TasksPage() {
   const { data, mutate, isLoading } = useSWR<Task[]>('/api/tasks', fetcher);
+  const { data: categories, mutate: mutateCats } = useSWR<Category[]>('/api/task-categories', fetcher);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -15,6 +18,8 @@ export default function TasksPage() {
     priority: 'medium' as Task['priority'],
     status: 'inactive' as Task['status'],
   });
+
+  const [catName, setCatName] = useState('');
 
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +40,24 @@ export default function TasksPage() {
     } else {
       const err = await res.json().catch(() => null);
       alert(`Save failed${err?.error ? ': ' + err.error : ''}`);
+    }
+  }
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
+    const name = catName.trim();
+    if (!name) return;
+    const res = await fetch('/api/task-categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      setCatName('');
+      mutateCats();
+    } else {
+      const msg = await res.text().catch(() => '');
+      alert('Category failed: ' + msg);
     }
   }
 
@@ -104,6 +127,17 @@ export default function TasksPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Tasks</h1>
 
+      {/* Manage Categories */}
+      <form onSubmit={addCategory} className="flex gap-2 rounded-xl border bg-white p-4">
+        <input
+          className="rounded border p-2 flex-1"
+          placeholder="New category"
+          value={catName}
+          onChange={e => setCatName(e.target.value)}
+        />
+        <button className="rounded bg-black px-4 py-2 text-white">Add</button>
+      </form>
+
       {/* Create Task */}
       <form onSubmit={addTask} className="grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-6">
         <input
@@ -113,6 +147,16 @@ export default function TasksPage() {
           onChange={e => setForm({ ...form, title: e.target.value })}
           required
         />
+        <select
+          className="rounded border p-2"
+          value={form.category_id}
+          onChange={e => setForm({ ...form, category_id: e.target.value })}
+        >
+          <option value="">No Category</option>
+          {(categories ?? []).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
         <select
           className="rounded border p-2"
           value={form.priority}
@@ -146,6 +190,7 @@ export default function TasksPage() {
           <thead className="border-b bg-gray-50">
             <tr>
               <th className="p-2 text-left">Title</th>
+              <th className="p-2">Category</th>
               <th className="p-2">Priority</th>
               <th className="p-2">Status</th>
               <th className="p-2">Created</th>
@@ -157,11 +202,12 @@ export default function TasksPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td className="p-3" colSpan={8}>Loading…</td></tr>
+              <tr><td className="p-3" colSpan={9}>Loading…</td></tr>
             ) : (
               (data ?? []).map(t => (
                 <tr key={t.id} className="border-b hover:bg-gray-50">
                   <td className="p-2">{t.title}</td>
+                  <td className="p-2 text-center">{t.category_name ?? ''}</td>
                   <td className="p-2 text-center">{cap(t.priority)}</td>
                   <td className="p-2"><StatusBadge s={t.status} /></td>
                   <td className="p-2">{t.created_at ? new Date(t.created_at).toLocaleString() : ''}</td>

@@ -11,3 +11,11 @@ export type Task = {
   updated_at: string;
   category_name?: string | null;
 };
+
+export type Transaction = {
+  id: string;
+  amount: number;
+  description: string | null;
+  occurred_at: string;
+  created_at: string;
+};

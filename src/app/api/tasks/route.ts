@@ -10,17 +10,20 @@ const ALLOWED_STATUS = new Set(['inactive', 'active', 'completed']);
 export async function GET() {
   const rows = await q`
     SELECT
-      id,
-      title,
-      description,
-      category_id,
-      priority,
-      status_select AS status,
-      created_at,
-      activated_at,
-      completed_at
-    FROM tasks
-    ORDER BY created_at DESC
+      t.id,
+      t.title,
+      t.description,
+      t.category_id,
+      c.name AS category_name,
+      t.priority,
+      t.status_select AS status,
+      t.created_at,
+      t.activated_at,
+      t.completed_at,
+      t.updated_at
+    FROM tasks t
+    LEFT JOIN task_categories c ON c.id = t.category_id
+    ORDER BY t.created_at DESC
   `;
   return NextResponse.json(toJSONSafe(rows));
 }
@@ -52,10 +55,17 @@ export async function POST(req: Request) {
       status_select AS status,
       created_at,
       activated_at,
-      completed_at
+      completed_at,
+      updated_at
   `;
 
-  return NextResponse.json(toJSONSafe(rows[0]));
+  const task = rows[0];
+  if (task?.category_id) {
+    const cat = await q`SELECT name FROM task_categories WHERE id = ${task.category_id}`;
+    task.category_name = cat[0]?.name ?? null;
+  }
+
+  return NextResponse.json(toJSONSafe(task));
 }
 
 // PATCH /api/tasks  -> optional bulk updates in future
