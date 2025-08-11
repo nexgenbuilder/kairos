@@ -15,18 +15,18 @@ export async function GET(req: Request) {
 
   const sql = `
     SELECT id, prospect_id, name, amount, actual_amount, stage,
-           expected_close_date, created_at, updated_at, notes
+           expected_close_at, created_at, updated_at, notes
     FROM deals
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY created_at DESC;
   `;
-  const { rows } = await q(sql, params);
+  const rows = await q(sql, params);
   return NextResponse.json(toJSONSafe(rows));
 }
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { prospect_id, name, amount, expected_close_date, notes } = body;
+  const { prospect_id, name, amount, expected_close_at, notes } = body;
 
   if (!prospect_id || !name) {
     return NextResponse.json(
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   const sql = `
-    INSERT INTO deals (prospect_id, name, amount, expected_close_date, notes)
+    INSERT INTO deals (prospect_id, name, amount, expected_close_at, notes)
     VALUES ($1, $2, $3, $4, $5)
     RETURNING *;
   `;
@@ -44,9 +44,9 @@ export async function POST(req: Request) {
     prospect_id,
     name,
     amount ?? null,
-    expected_close_date ?? null,
+    expected_close_at ?? null,
     notes ?? null,
   ];
-  const { rows } = await q(sql, params);
+  const rows = await q(sql, params);
   return NextResponse.json(toJSONSafe(rows[0]));
 }

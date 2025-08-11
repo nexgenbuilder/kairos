@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
+import { toJSONSafe } from '@/lib/json';
 
 
 export async function GET(req: Request) {
@@ -14,8 +15,8 @@ export async function GET(req: Request) {
   }
   sql += ' ORDER BY created_at DESC';
 
-  const { rows } = await q(sql, vals.length ? vals : undefined);
-  return NextResponse.json(rows);
+  const rows = await q(sql, vals.length ? vals : undefined);
+  return NextResponse.json(toJSONSafe(rows));
 }
 
 export async function POST(req: Request) {
@@ -41,8 +42,8 @@ export async function POST(req: Request) {
     due_at ?? null,
   ];
 
-  const { rows } = await q(sql, params);
-  return NextResponse.json(rows[0]);
+  const rows = await q(sql, params);
+  return NextResponse.json(toJSONSafe(rows[0]));
 }
 
 
