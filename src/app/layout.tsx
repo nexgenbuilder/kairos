@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/content">Content</Link>
             <Link href="/prospects">Prospects</Link>
             <Link href="/inventory">Inventory</Link>
+            <Link href="/admin/delete" className="hover:underline">Admin</Link>
           </nav>
         </header>
         <main className="mx-auto max-w-6xl p-4">{children}</main>

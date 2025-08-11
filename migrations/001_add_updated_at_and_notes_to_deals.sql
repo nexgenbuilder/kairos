@@ -1,5 +1,4 @@
-ALTER TABLE deals
-  ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN notes TEXT;
-
-UPDATE deals SET updated_at = created_at WHERE updated_at IS NULL;
+-- Make deals columns idempotent
+ALTER TABLE IF EXISTS deals
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS notes TEXT;
