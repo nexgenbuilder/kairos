@@ -282,7 +282,7 @@ export default function ProspectsPage() {
       return;
     }
     setDForm({ prospect_id: '', name: '', amount: '', probability: '0.30', expected_close_at: '', heat: 'warm', notes: '' });
-    await refreshDeals();
+    await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
   function startEdit(d: Deal) {
@@ -316,7 +316,7 @@ export default function ProspectsPage() {
       return;
     }
     setEditingId(null);
-    await refreshDeals();
+    await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
   async function markWon(id: string) {
@@ -329,7 +329,7 @@ export default function ProspectsPage() {
       body: JSON.stringify(payload),
     });
     if (!res.ok) return alert('Failed to mark won');
-    await refreshDeals();
+    await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
   async function markLost(id: string) {
@@ -339,7 +339,7 @@ export default function ProspectsPage() {
       body: JSON.stringify({ stage: 'lost', actual_amount: null, won_at: null }),
     });
     if (!res.ok) return alert('Failed to mark lost');
-    await refreshDeals();
+    await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
   /* =======================
