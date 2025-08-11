@@ -18,7 +18,7 @@ export async function GET(req: Request) {
            expected_close_at, won_at, heat, created_at, updated_at, notes
     FROM deals
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY created_at DESC;
+    ORDER BY COALESCE(updated_at, created_at) DESC;
   `;
   const rows = await q(sql, params);
   return NextResponse.json(toJSONSafe(rows));
@@ -36,17 +36,20 @@ export async function POST(req: Request) {
   }
 
   const sql = `
-    INSERT INTO deals (prospect_id, name, amount, probability, stage, expected_close_at, heat, notes)
-    VALUES ($1, $2, $3, $4, 'open', $5, $6, $7)
+    INSERT INTO deals (
+      prospect_id, name, amount, probability, stage, expected_close_at, heat, notes
+    ) VALUES (
+      $1, $2, $3, $4, 'open', $5, $6, $7
+    )
     RETURNING *;
   `;
   const params = [
     prospect_id,
     name,
     amount ?? null,
-    probability ?? 0,
+    probability ?? 1,
     expected_close_at ?? null,
-    heat ?? null,
+    heat ?? 'warm',
     notes ?? null,
   ];
   const rows = await q(sql, params);
