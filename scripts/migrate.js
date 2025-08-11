@@ -1,3 +1,7 @@
+// Load environment variables from a .env file so migrations can
+// access database connection settings when run directly with Node.
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
