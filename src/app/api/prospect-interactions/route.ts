@@ -1,49 +1,28 @@
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
 import { toJSONSafe } from '@/lib/json';
-
+import { requireUser } from '@/lib/auth';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const pid = searchParams.get('prospect_id');
+  const user = await requireUser(req);
+  const url = new URL(req.url);
+  const prospectId = url.searchParams.get('prospect_id');
 
-  let sql = 'SELECT * FROM prospect_interactions';
-  const vals: any[] = [];
-  if (pid) {
-    sql += ' WHERE prospect_id = $1';
-    vals.push(pid);
-  }
-  sql += ' ORDER BY created_at DESC';
+  const rows = prospectId
+    ? await q`SELECT * FROM public.prospect_interactions WHERE user_id=${user.id} AND prospect_id=${prospectId} ORDER BY created_at DESC`
+    : await q`SELECT * FROM public.prospect_interactions WHERE user_id=${user.id} ORDER BY created_at DESC`;
 
-  const rows = await q(sql, vals.length ? vals : undefined);
   return NextResponse.json(toJSONSafe(rows));
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { prospect_id, type, summary, due_at } = body;
-
-  if (!prospect_id || !type) {
-    return NextResponse.json(
-      { error: 'prospect_id and type are required' },
-      { status: 400 }
-    );
-  }
-
-  const sql = `
-    INSERT INTO prospect_interactions (prospect_id, type, summary, due_at)
-    VALUES ($1, $2, $3, $4)
+  const user = await requireUser(req);
+  const b = await req.json().catch(() => ({}));
+  const rows = await q`
+    INSERT INTO public.prospect_interactions (user_id, prospect_id, kind, notes, created_at)
+    VALUES (${user.id}, ${b.prospect_id ?? null}, ${b.kind ?? 'note'}, ${b.notes ?? null}, NOW())
     RETURNING *;
   `;
-  const params = [
-    prospect_id,
-    type,
-    summary ?? null,
-    due_at ?? null,
-  ];
-
-  const rows = await q(sql, params);
   return NextResponse.json(toJSONSafe(rows[0]));
 }
-
 

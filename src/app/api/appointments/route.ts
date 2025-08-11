@@ -1,41 +1,27 @@
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
 import { toJSONSafe } from '@/lib/json';
+import { requireUser } from '@/lib/auth';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const pid = searchParams.get('prospect_id');
+  const user = await requireUser(req);
+  const url = new URL(req.url);
+  const prospectId = url.searchParams.get('prospect_id');
 
-  const rows = pid
-    ? await q`select * from appointments where prospect_id = ${pid} order by starts_at desc`
-    : await q`select * from appointments order by starts_at desc`;
+  const rows = prospectId
+    ? await q`SELECT * FROM public.appointments WHERE user_id=${user.id} AND prospect_id=${prospectId} ORDER BY created_at DESC`
+    : await q`SELECT * FROM public.appointments WHERE user_id=${user.id} ORDER BY created_at DESC`;
 
   return NextResponse.json(toJSONSafe(rows));
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({} as any));
-  const {
-    prospect_id,
-    title,
-    starts_at,
-    ends_at,
-    location = null,
-    notes = null,
-  } = body || {};
-
-  if (!prospect_id || !title || !starts_at || !ends_at) {
-    return NextResponse.json(
-      { error: 'prospect_id, title, starts_at, ends_at required' },
-      { status: 400 }
-    );
-  }
-
+  const user = await requireUser(req);
+  const b = await req.json().catch(() => ({}));
   const rows = await q`
-    insert into appointments (prospect_id, title, starts_at, ends_at, location, notes)
-    values (${prospect_id}, ${title}, ${starts_at}, ${ends_at}, ${location}, ${notes})
-    returning *
+    INSERT INTO public.appointments (user_id, prospect_id, title, scheduled_at, notes, created_at, updated_at)
+    VALUES (${user.id}, ${b.prospect_id ?? null}, ${b.title ?? null}, ${b.scheduled_at ?? null}, ${b.notes ?? null}, NOW(), NOW())
+    RETURNING *;
   `;
-
   return NextResponse.json(toJSONSafe(rows[0]));
 }

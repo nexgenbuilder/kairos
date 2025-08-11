@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
 import { toJSONSafe } from '@/lib/json';
+import { requireUser } from '@/lib/auth';
 
 type Ctx = { params: { id: string } };
 const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 
-/** GET /api/tasks/[id] */
-export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = params;
+export async function GET(req: Request, { params }: Ctx) {
+  const user = await requireUser(req);
   const rows = await q(
     `
     SELECT
@@ -22,35 +22,30 @@ export async function GET(_req: Request, { params }: Ctx) {
       t.activated_at,
       t.completed_at,
       t.updated_at
-    FROM tasks t
-    LEFT JOIN task_categories c ON c.id = t.category_id
-    WHERE t.id = $1
+    FROM public.tasks t
+    LEFT JOIN public.task_categories c ON c.id = t.category_id AND c.user_id=$2
+    WHERE t.id = $1 AND t.user_id = $2
     `,
-    [id]
+    [params.id, user.id]
   );
   if (!rows[0]) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json(rows[0]);
+  return NextResponse.json(toJSONSafe(rows[0]));
 }
 
-/** PATCH /api/tasks/[id] — partial update (status + fields) */
 export async function PATCH(req: Request, { params }: Ctx) {
-  const { id } = params;
+  const user = await requireUser(req);
   const b = await req.json();
 
-  // Normalize inputs
   const title = b.title !== undefined ? (b.title === null ? null : String(b.title)) : undefined;
   const description = b.description === undefined ? undefined : (b.description ?? null);
   const category_id = b.category_id === undefined ? undefined : (b.category_id ?? null);
 
-  // Priority is NOT NULL in DB; only update if provided & valid
   let priority: string | undefined = undefined;
   if (b.priority !== undefined) {
     const pin = String(b.priority ?? '').toLowerCase();
     if (ALLOWED_PRIORITY.has(pin)) priority = pin;
-    else priority = undefined; // ignore invalid/blank to avoid NOT NULL issues
   }
 
-  // Status via status_select; only update if provided & valid
   let status: 'inactive' | 'active' | 'completed' | undefined = undefined;
   if (b.status !== undefined || b.status_select !== undefined) {
     const s = String(b.status_select ?? b.status ?? '').toLowerCase();
@@ -59,50 +54,50 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const rows = await q(
     `
-    UPDATE tasks
+    UPDATE public.tasks
     SET
-      title         = COALESCE($2, title),
-      description   = COALESCE($3, description),
-      category_id   = COALESCE($4, category_id),
-      priority      = COALESCE($5, priority),
-      status_select = COALESCE($6, status_select),
+      title         = COALESCE($3, title),
+      description   = COALESCE($4, description),
+      category_id   = COALESCE($5, category_id),
+      priority      = COALESCE($6, priority),
+      status_select = COALESCE($7, status_select),
       activated_at  = CASE
-        WHEN $6 IS NULL THEN activated_at
-        WHEN $6::text = 'active'    AND activated_at IS NULL THEN NOW()
-        WHEN $6::text <> 'active'   THEN NULL
+        WHEN $7 IS NULL THEN activated_at
+        WHEN $7::text = 'active'    AND activated_at IS NULL THEN NOW()
+        WHEN $7::text <> 'active'   THEN NULL
         ELSE activated_at
       END,
       completed_at  = CASE
-        WHEN $6 IS NULL THEN completed_at
-        WHEN $6::text = 'completed' THEN NOW()
-        WHEN $6::text <> 'completed' THEN NULL
+        WHEN $7 IS NULL THEN completed_at
+        WHEN $7::text = 'completed' THEN NOW()
+        WHEN $7::text <> 'completed' THEN NULL
         ELSE completed_at
-      END
-    WHERE id = $1
-    RETURNING
-      id, title, description, category_id, priority,
-      status_select AS status, created_at, activated_at, completed_at, updated_at;
+      END,
+      updated_at = NOW()
+    WHERE id = $1 AND user_id = $2
+    RETURNING id, title, description, category_id, priority,
+              status_select AS status, created_at, activated_at, completed_at, updated_at
     `,
-    [id, title as any, description as any, category_id as any, priority as any, status as any]
+    [params.id, user.id, title as any, description as any, category_id as any, priority as any, status as any]
   );
 
   const task = rows[0];
   if (!task) return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (task.category_id) {
-    const cat = await q`SELECT name FROM task_categories WHERE id = ${task.category_id}`;
+    const cat = await q`SELECT name FROM public.task_categories WHERE id = ${task.category_id} AND user_id=${user.id}`;
     task.category_name = cat[0]?.name ?? null;
   }
   return NextResponse.json(toJSONSafe(task));
 }
 
-/** DELETE /api/tasks/[id] */
-export async function DELETE(_req: Request, { params }: Ctx) {
-  const { id } = params;
-  const rows = await q(`DELETE FROM tasks WHERE id = $1 RETURNING id`, [id]);
+export async function DELETE(req: Request, { params }: Ctx) {
+  const user = await requireUser(req);
+  const rows = await q(`DELETE FROM public.tasks WHERE id = $1 AND user_id = $2 RETURNING id`, [params.id, user.id]);
   return rows[0]
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ error: 'not found' }, { status: 404 });
 }
+
 
 
 

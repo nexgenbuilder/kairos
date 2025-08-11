@@ -1,52 +1,28 @@
+// src/app/api/prospects/route.ts
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
-import { toJSONSafe } from '@/lib/json';
+import { requireUser } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const user = await requireUser(req);
   const rows = await q`
-    select
-      p.*,
-      coalesce(ic.interactions_count, 0) as interactions_count,
-      ic.last_interaction_at
-    from prospects p
-    left join (
-      select
-        prospect_id,
-        count(*) as interactions_count,
-        max(created_at) as last_interaction_at
-      from prospect_interactions
-      group by prospect_id
-    ) ic on ic.prospect_id = p.id
-    order by p.created_at desc
+    SELECT * FROM prospects
+    WHERE user_id=${user.id}
+    ORDER BY created_at DESC
   `;
-
-  return NextResponse.json(toJSONSafe(rows));
+  return NextResponse.json(rows);
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { name, email, phone, company, notes } = body;
+  const user = await requireUser(req);
+  const b = await req.json();
 
-  if (!name) {
-    return NextResponse.json(
-      { error: 'name is required' },
-      { status: 400 }
-    );
-  }
-
-  const sql = `
-    INSERT INTO prospects (name, email, phone, company, notes)
-    VALUES ($1, $2, $3, $4, $5)
+  const rows = await q`
+    INSERT INTO prospects (id, user_id, name, email, phone, company, notes, stage, created_at, updated_at)
+    VALUES (gen_random_uuid(), ${user.id}, ${b.name ?? null}, ${b.email ?? null}, ${b.phone ?? null},
+            ${b.company ?? null}, ${b.notes ?? null}, ${b.stage ?? 'new'}, NOW(), NOW())
     RETURNING *;
   `;
-  const params = [
-    name,
-    email ?? null,
-    phone ?? null,
-    company ?? null,
-    notes ?? null,
-  ];
-
-  const rows = await q(sql, params);
-  return NextResponse.json(toJSONSafe(rows[0]));
+  return NextResponse.json(rows[0]);
 }
+

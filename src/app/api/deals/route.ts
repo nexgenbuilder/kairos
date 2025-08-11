@@ -1,54 +1,41 @@
+// src/app/api/deals/route.ts
 import { NextResponse } from 'next/server';
 import { q } from '@/lib/db';
-import { toJSONSafe } from '@/lib/json';
+import { requireUser } from '@/lib/auth';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const prospectId = searchParams.get('prospect_id');
+  const user = await requireUser(req);
+  const url = new URL(req.url);
+  const prospectId = url.searchParams.get('prospect_id');
 
-  const params: any[] = [];
-  const where: string[] = [];
   if (prospectId) {
-    params.push(prospectId);
-    where.push(`prospect_id = $${params.length}`);
+    const rows = await q`
+      SELECT * FROM deals
+      WHERE user_id=${user.id} AND prospect_id=${prospectId}
+      ORDER BY created_at DESC
+    `;
+    return NextResponse.json(rows);
   }
 
-  const sql = `
-    SELECT id, prospect_id, name, amount, actual_amount, probability, stage,
-           expected_close_at, won_at, heat, created_at, updated_at, notes
-    FROM deals
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY COALESCE(updated_at, created_at) DESC;
+  const rows = await q`
+    SELECT * FROM deals
+    WHERE user_id=${user.id}
+    ORDER BY created_at DESC
   `;
-  const rows = await q(sql, params);
-  return NextResponse.json(toJSONSafe(rows));
+  return NextResponse.json(rows);
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { prospect_id, name, amount, probability, expected_close_at, heat, notes } = body;
+  const user = await requireUser(req);
+  const b = await req.json();
 
-  if (!prospect_id || !name) {
-    return NextResponse.json(
-      { error: 'prospect_id and name are required' },
-      { status: 400 }
-    );
-  }
-
-  const sql = `
-    INSERT INTO deals (prospect_id, name, amount, probability, stage, expected_close_at, heat, notes)
-    VALUES ($1, $2, $3, $4, 'open', $5, $6, $7)
+  const rows = await q`
+    INSERT INTO deals (id, user_id, prospect_id, name, amount, actual_amount, probability, stage, expected_close_at, heat, notes, created_at, updated_at)
+    VALUES (gen_random_uuid(), ${user.id}, ${b.prospect_id ?? null}, ${b.name ?? null},
+            ${b.amount ?? 0}, ${b.actual_amount ?? null}, ${b.probability ?? 0},
+            ${b.stage ?? 'new'}, ${b.expected_close_at ?? null}, ${b.heat ?? null}, ${b.notes ?? null},
+            NOW(), NOW())
     RETURNING *;
   `;
-  const params = [
-    prospect_id,
-    name,
-    amount ?? null,
-    probability ?? 1,
-    expected_close_at ?? null,
-    heat ?? 'warm',
-    notes ?? null,
-  ];
-  const rows = await q(sql, params);
-  return NextResponse.json(toJSONSafe(rows[0]));
+  return NextResponse.json(rows[0]);
 }
