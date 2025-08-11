@@ -1,17 +1,42 @@
-export default function Home() {
+import Link from 'next/link';
+import { q } from '@/lib/db';
+
+export default async function Home() {
+  const [{ count: prospects = 0 } = {}] = await q`SELECT COUNT(*)::int AS count FROM prospects`;
+  const [{ count: tasks = 0 } = {}] = await q`SELECT COUNT(*)::int AS count FROM tasks WHERE status_select <> 'completed'`;
+  const dealSummary = await q`
+    select
+      coalesce(sum(case when stage = 'won'
+                        then coalesce(actual_amount, amount)
+                        else 0 end), 0)::double precision as revenue,
+      coalesce(sum(case when stage <> 'lost'
+                        then amount * probability
+                        else 0 end), 0)::double precision as pipeline
+    from deals
+  `;
+  const txSummary = await q`select coalesce(sum(amount),0)::double precision as tx from transactions`;
+  const revenue = Number(dealSummary[0]?.revenue || 0) + Number(txSummary[0]?.tx || 0);
+  const pipeline = Number(dealSummary[0]?.pipeline || 0);
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <section className="rounded-xl border bg-white p-4">
-        <h2 className="text-lg font-semibold mb-2">Welcome</h2>
-        <p>This is your personal ops app (Phase 2 UI). Use the nav to access modules.</p>
-      </section>
-      <section className="rounded-xl border bg-white p-4">
-        <h2 className="text-lg font-semibold mb-2">Next steps</h2>
-        <ol className="list-decimal ml-4 space-y-1">
-          <li>Go to <b>Tasks</b> to add/edit and verify timestamps update from DB triggers.</li>
-          <li>Extend cashflow/content/prospects/inventory pages the same way.</li>
-        </ol>
-      </section>
+      <Link href="/prospects" className="rounded-xl border bg-white p-4 block">
+        <h2 className="text-lg font-semibold mb-2">Prospects</h2>
+        <p>{prospects} prospects</p>
+      </Link>
+      <Link href="/tasks" className="rounded-xl border bg-white p-4 block">
+        <h2 className="text-lg font-semibold mb-2">Tasks</h2>
+        <p>{tasks} active tasks</p>
+      </Link>
+      <Link href="/cashflow" className="rounded-xl border bg-white p-4 block">
+        <h2 className="text-lg font-semibold mb-2">Cashflow</h2>
+        <p>Total Revenue: ${revenue.toFixed(2)}
+          <br />Pipeline: ${pipeline.toFixed(2)}</p>
+      </Link>
+      <Link href="/content" className="rounded-xl border bg-white p-4 block">
+        <h2 className="text-lg font-semibold mb-2">Content</h2>
+        <p>Manage your content pieces.</p>
+      </Link>
     </div>
-  )
+  );
 }

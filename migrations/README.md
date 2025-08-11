@@ -15,3 +15,9 @@ Adds `updated_at` (timestamp with time zone) and `notes` (text) columns to the `
 
 ## 002_add_deals_updated_at_trigger.sql
 Adds a trigger so the `updated_at` column is automatically refreshed on every update to a deal.
+
+## 003_create_task_categories.sql
+Creates a `task_categories` table and links existing tasks via a foreign key.
+
+## 004_create_transactions_table.sql
+Adds a `transactions` table for recording standalone cashflow entries.
