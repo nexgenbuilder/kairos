@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     'amount',
     'actual_amount',
     'stage',
-    'expected_close_date',
+    'expected_close_at',
     'notes',
   ];
 
@@ -36,7 +36,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const sql = `UPDATE deals SET ${sets.join(', ')} WHERE id = $${i} RETURNING *;`;
   vals.push(id);
 
-  const { rows } = await q(sql, vals);
+  const rows = await q(sql, vals);
   if (!rows[0]) {
     return NextResponse.json({ error: 'Deal not found' }, { status: 404 });
   }
