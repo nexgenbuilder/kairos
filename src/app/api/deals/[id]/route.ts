@@ -44,8 +44,18 @@ export async function PATCH(req: Request, { params }: Ctx) {
   vals.push(id);
 
   const rows = await q(sql, vals);
-  if (!rows[0]) {
+  const deal = rows[0];
+  if (!deal) {
     return NextResponse.json({ error: 'Deal not found' }, { status: 404 });
   }
-  return NextResponse.json(toJSONSafe(rows[0]));
+
+  // Sync transactions table so cashflow reflects won deals
+  await q`DELETE FROM transactions WHERE deal_id = ${deal.id}`;
+  if (deal.stage === 'won') {
+    const amt = deal.actual_amount ?? deal.amount;
+    await q`INSERT INTO transactions (deal_id, prospect_id, type, amount, occurred_at, description, category)
+            VALUES (${deal.id}, ${deal.prospect_id}, 'income', ${amt}, ${deal.won_at || new Date().toISOString()}, ${deal.name}, 'deal')`;
+  }
+
+  return NextResponse.json(toJSONSafe(deal));
 }
