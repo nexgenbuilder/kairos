@@ -12,8 +12,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
     'name',
     'amount',
     'actual_amount',
+    'probability',
     'stage',
     'expected_close_at',
+    'heat',
+    'won_at',
     'notes',
   ];
 
@@ -26,6 +29,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
       sets.push(`${key} = $${i++}`);
       vals.push(body[key]);
     }
+  }
+
+  if (body.stage !== undefined && body.won_at === undefined) {
+    sets.push(`won_at = $${i++}`);
+    vals.push(body.stage === 'won' ? new Date().toISOString() : null);
   }
 
   if (sets.length === 0) {

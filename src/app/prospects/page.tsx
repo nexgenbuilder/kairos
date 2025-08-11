@@ -321,7 +321,7 @@ export default function ProspectsPage() {
 
   async function markWon(id: string) {
     const actual = prompt('Actual amount collected? (leave blank to use proposed amount)');
-    const payload: any = { stage: 'won' };
+    const payload: any = { stage: 'won', won_at: new Date().toISOString() };
     if (actual && !isNaN(Number(actual))) payload.actual_amount = Number(actual);
     const res = await fetch(`/api/deals/${id}`, {
       method: 'PATCH',
@@ -336,7 +336,7 @@ export default function ProspectsPage() {
     const res = await fetch(`/api/deals/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage: 'lost', actual_amount: null }),
+      body: JSON.stringify({ stage: 'lost', actual_amount: null, won_at: null }),
     });
     if (!res.ok) return alert('Failed to mark lost');
     await refreshDeals();

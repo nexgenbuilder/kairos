@@ -14,8 +14,8 @@ export async function GET(req: Request) {
   }
 
   const sql = `
-    SELECT id, prospect_id, name, amount, actual_amount, stage,
-           expected_close_at, created_at, updated_at, notes
+    SELECT id, prospect_id, name, amount, actual_amount, probability, stage,
+           expected_close_at, won_at, heat, created_at, updated_at, notes
     FROM deals
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY created_at DESC;
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { prospect_id, name, amount, expected_close_at, notes } = body;
+  const { prospect_id, name, amount, probability, expected_close_at, heat, notes } = body;
 
   if (!prospect_id || !name) {
     return NextResponse.json(
@@ -36,15 +36,17 @@ export async function POST(req: Request) {
   }
 
   const sql = `
-    INSERT INTO deals (prospect_id, name, amount, expected_close_at, notes)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO deals (prospect_id, name, amount, probability, stage, expected_close_at, heat, notes)
+    VALUES ($1, $2, $3, $4, 'open', $5, $6, $7)
     RETURNING *;
   `;
   const params = [
     prospect_id,
     name,
     amount ?? null,
+    probability ?? 0,
     expected_close_at ?? null,
+    heat ?? null,
     notes ?? null,
   ];
   const rows = await q(sql, params);
