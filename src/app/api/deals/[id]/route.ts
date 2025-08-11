@@ -27,7 +27,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
       vals.push(body[key]);
     }
   }
-  sets.push(`updated_at = now()`);
 
   if (sets.length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
