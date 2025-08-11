@@ -1,6 +1,9 @@
 # Database Migrations
 
 Run these scripts against your PostgreSQL database to keep the schema in sync with the application.
+They rely on a `DATABASE_URL` environment variable, so ensure you have a
+`.env` file in the project root populated with your connection details
+before running them.
 
 The easiest way is to execute all outstanding migrations with:
 
