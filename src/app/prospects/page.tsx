@@ -52,6 +52,8 @@ type Deal = {
   won_at: string | null;
   heat?: 'cold' | 'warm' | 'hot' | 'on_hold';
   created_at: string;
+  updated_at: string;
+  notes: string | null;
 };
 
 /* =======================
