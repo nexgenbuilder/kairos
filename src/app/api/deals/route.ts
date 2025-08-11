@@ -18,7 +18,7 @@ export async function GET(req: Request) {
            expected_close_at, won_at, heat, created_at, updated_at, notes
     FROM deals
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY created_at DESC;
+    ORDER BY COALESCE(updated_at, created_at) DESC;
   `;
   const rows = await q(sql, params);
   return NextResponse.json(toJSONSafe(rows));

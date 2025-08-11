@@ -21,9 +21,13 @@ type APIResponse = {
 
 type Transaction = {
   id: string;
+  type: 'income' | 'expense';
   amount: number;
   description: string | null;
   occurred_at: string;
+  category: string | null;
+  deal_id: string | null;
+  prospect_id: string | null;
 };
 
 const fetcher = async (u: string) => {
@@ -53,6 +57,7 @@ export default function CashflowPage() {
         amount: Number(tForm.amount),
         description: tForm.description || null,
         occurred_at: tForm.occurred_at || undefined,
+        type: 'income',
       }),
     });
     if (res.ok) {
