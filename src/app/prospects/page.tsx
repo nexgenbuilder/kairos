@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
+import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
+import { Trash, CheckCircle2, XCircle, Edit3 } from 'lucide-react';
 
 /* =======================
    Types
@@ -59,7 +62,6 @@ type Deal = {
 /* =======================
    Utils
 ======================= */
-// Robust fetcher: accepts [], {data: []}, or {rows: []}
 const fetcher = async (u: string) => {
   const r = await fetch(u);
   if (!r.ok) throw new Error(await r.text().catch(() => 'Request failed'));
@@ -83,19 +85,16 @@ const toISOOrNull = (v?: string) => {
    Page
 ======================= */
 export default function ProspectsPage() {
-  // master list
   const { data: prospects, mutate: refreshProspects, isLoading } = useSWR<Prospect[]>('/api/prospects', fetcher);
 
-  // selection
   const [selectedId, setSelectedId] = useState<string>('');
 
-  // dependent data
   const { data: interactions, mutate: refreshInteractions } = useSWR<Interaction[]>(
     selectedId ? `/api/prospect-interactions?prospect_id=${selectedId}` : null,
     fetcher
   );
   const { data: appts, mutate: refreshAppts } = useSWR<Appointment[]>(
-    selectedId ? `/api/appointments?prospect_id=${selectedId}` : '/api/appointments',
+    selectedId ? `/api/appointments?prospect_id=${selectedId}` : null,
     fetcher
   );
   const { data: dealsRaw, mutate: refreshDeals } = useSWR<any>(
@@ -103,7 +102,6 @@ export default function ProspectsPage() {
     fetcher
   );
 
-  // Normalize to a typed array for the rest of the UI
   const dealsList: Deal[] = useMemo(() => {
     const d = dealsRaw as any;
     if (Array.isArray(d)) return d as Deal[];
@@ -112,9 +110,12 @@ export default function ProspectsPage() {
     return [];
   }, [dealsRaw]);
 
-  const selected = useMemo(() => (prospects ?? []).find(p => p.id === selectedId), [prospects, selectedId]);
+  const selected = useMemo(
+    () => (prospects ?? []).find(p => p.id === selectedId) || null,
+    [prospects, selectedId]
+  );
 
-  // forms
+  // create forms
   const [pForm, setPForm] = useState({ name: '', email: '', phone: '', company: '', notes: '' });
   const [iForm, setIForm] = useState<{ prospect_id: string; type: Interaction['type']; summary: string; due_at: string }>({
     prospect_id: '',
@@ -123,8 +124,6 @@ export default function ProspectsPage() {
     due_at: '',
   });
   const [aForm, setAForm] = useState({ prospect_id: '', title: '', starts_at: '', ends_at: '', location: '', notes: '' });
-
-  // deals form
   const [dForm, setDForm] = useState({
     prospect_id: '',
     name: '',
@@ -135,18 +134,12 @@ export default function ProspectsPage() {
     notes: '',
   });
 
-  // inline edit state
+  // inline deal edit
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [edit, setEdit] = useState<{ name: string; amount: string; probability: string; expected_close_at: string; heat: Deal['heat']; notes: string }>({
-    name: '',
-    amount: '',
-    probability: '0.30',
-    expected_close_at: '',
-    heat: 'warm',
-    notes: '',
-  });
+  const [edit, setEdit] = useState<{
+    name: string; amount: string; probability: string; expected_close_at: string; heat: Deal['heat']; notes: string;
+  }>({ name: '', amount: '', probability: '0.30', expected_close_at: '', heat: 'warm', notes: '' });
 
-  // metrics
   const projected = useMemo(() => {
     return dealsList
       .filter(d => d.stage === 'open')
@@ -160,7 +153,7 @@ export default function ProspectsPage() {
   }, [dealsList]);
 
   /* =======================
-     Handlers
+     Handlers (create)
   ======================= */
   async function createProspect(e: React.FormEvent) {
     e.preventDefault();
@@ -191,7 +184,7 @@ export default function ProspectsPage() {
         prospect_id: pid,
         type: iForm.type,
         summary: iForm.summary || null,
-        due_at: iForm.due_at || null, // API normalizes
+        due_at: iForm.due_at ? new Date(iForm.due_at).toISOString() : null,
       }),
     });
     if (!res.ok) {
@@ -222,7 +215,6 @@ export default function ProspectsPage() {
         notes: aForm.notes || null,
       }),
     });
-
     if (!res.ok) {
       const msg = await res.text().catch(() => '');
       alert('Appointment failed: ' + msg);
@@ -230,27 +222,6 @@ export default function ProspectsPage() {
     }
     setAForm({ prospect_id: '', title: '', starts_at: '', ends_at: '', location: '', notes: '' });
     await refreshAppts();
-  }
-
-  async function quickReminder(days: number) {
-    if (!selectedId) return alert('Select a prospect row first.');
-    const due = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-    const res = await fetch('/api/prospect-interactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prospect_id: selectedId,
-        type: 'reminder',
-        summary: `Auto reminder (+${days}d)`,
-        due_at: due,
-      }),
-    });
-    if (res.ok) {
-      await Promise.all([refreshInteractions(), refreshProspects()]);
-    } else {
-      const err = await res.text().catch(() => '');
-      alert('Failed to set reminder: ' + err);
-    }
   }
 
   async function addDeal(e: React.FormEvent) {
@@ -285,6 +256,9 @@ export default function ProspectsPage() {
     await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
+  /* =======================
+     Handlers (update/delete)
+  ======================= */
   function startEdit(d: Deal) {
     setEditingId(d.id);
     setEdit({
@@ -342,6 +316,35 @@ export default function ProspectsPage() {
     await Promise.all([refreshDeals(), refreshProspects()]);
   }
 
+  async function deleteProspect(id: string) {
+    if (!confirm('Delete this prospect and related data?')) return;
+    const res = await fetch(`/api/prospects/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setSelectedId('');
+      await refreshProspects();
+    } else {
+      alert('Delete failed');
+    }
+  }
+
+  async function deleteDeal(id: string) {
+    if (!confirm('Delete this deal?')) return;
+    const res = await fetch(`/api/deals/${id}`, { method: 'DELETE' });
+    if (res.ok) refreshDeals();
+  }
+
+  async function deleteAppointment(id: string) {
+    if (!confirm('Delete this appointment?')) return;
+    const res = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+    if (res.ok) refreshAppts();
+  }
+
+  async function deleteInteraction(id: string) {
+    if (!confirm('Delete this interaction?')) return;
+    const res = await fetch(`/api/prospect-interactions/${id}`, { method: 'DELETE' });
+    if (res.ok) refreshInteractions();
+  }
+
   /* =======================
      Render
   ======================= */
@@ -349,11 +352,18 @@ export default function ProspectsPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Prospects</h1>
-        <div className="flex gap-2">
-          <button className="rounded border px-3 py-1 text-sm" onClick={() => quickReminder(1)} title="Reminder in 1 day">+1d</button>
-          <button className="rounded border px-3 py-1 text-sm" onClick={() => quickReminder(3)} title="Reminder in 3 days">+3d</button>
-          <button className="rounded border px-3 py-1 text-sm" onClick={() => quickReminder(7)} title="Reminder in 7 days">+7d</button>
-        </div>
+        {selected ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">Selected: <b>{selected.name}</b></span>
+            <button
+              className="p-2 rounded hover:bg-red-50 text-red-600"
+              title="Delete selected prospect"
+              onClick={() => deleteProspect(selected.id)}
+            >
+              <Trash size={16} />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Create Prospect */}
@@ -363,7 +373,7 @@ export default function ProspectsPage() {
         <input className="rounded border p-2" placeholder="Phone" value={pForm.phone} onChange={e=>setPForm({...pForm, phone:e.target.value})}/>
         <input className="rounded border p-2" placeholder="Company" value={pForm.company} onChange={e=>setPForm({...pForm, company:e.target.value})}/>
         <input className="rounded border p-2 md:col-span-2" placeholder="Notes" value={pForm.notes} onChange={e=>setPForm({...pForm, notes:e.target.value})}/>
-        <button className="rounded bg-black px-4 py-2 text-white md:col-span-6">Add Prospect</button>
+        <Button className="md:col-span-6" type="submit">Add Prospect</Button>
       </form>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -393,12 +403,12 @@ export default function ProspectsPage() {
                     title="Click to load interactions, deals & appointments"
                   >
                     <td className="p-2">{p.name}</td>
-                    <td className="p-2">{p.company ?? ''}</td>
-                    <td className="p-2">{p.email ?? ''}</td>
-                    <td className="p-2">{p.phone ?? ''}</td>
+                    <td className="p-2 text-center">{p.company ?? ''}</td>
+                    <td className="p-2 text-center">{p.email ?? ''}</td>
+                    <td className="p-2 text-center">{p.phone ?? ''}</td>
                     <td className="p-2 text-center">{p.interactions_count ?? 0}</td>
-                    <td className="p-2">{fmt(p.last_interaction_at)}</td>
-                    <td className="p-2">{fmt(p.created_at)}</td>
+                    <td className="p-2 text-center">{fmt(p.last_interaction_at)}</td>
+                    <td className="p-2 text-center">{fmt(p.created_at)}</td>
                   </tr>
                 ))
               )}
@@ -410,7 +420,9 @@ export default function ProspectsPage() {
         <div className="space-y-6">
           {/* Log Interaction */}
           <form onSubmit={logInteraction} className="rounded-xl border bg-white p-4 space-y-3">
-            <h2 className="font-semibold">Log Interaction</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Log Interaction</h2>
+            </div>
             <select className="w-full rounded border p-2" value={iForm.prospect_id || selectedId} onChange={e=>setIForm({...iForm, prospect_id:e.target.value})}>
               <option value="">Select prospect…</option>
               {(prospects ?? []).map(p => <option key={p.id} value={p.id}>{p.name || '(no name)'}</option>)}
@@ -425,7 +437,7 @@ export default function ProspectsPage() {
             </select>
             <input className="w-full rounded border p-2" placeholder="Summary / Notes" value={iForm.summary} onChange={e=>setIForm({...iForm, summary:e.target.value})}/>
             <input className="w-full rounded border p-2" type="datetime-local" value={iForm.due_at} onChange={e=>setIForm({...iForm, due_at:e.target.value})}/>
-            <button className="rounded bg-black px-4 py-2 text-white">Save Interaction</button>
+            <Button>Save Interaction</Button>
           </form>
 
           {/* Deals */}
@@ -454,7 +466,7 @@ export default function ProspectsPage() {
                 <option value="on_hold">On hold</option>
               </select>
               <input className="rounded border p-2 md:col-span-6" placeholder="Notes" value={dForm.notes} onChange={e=>setDForm({...dForm, notes:e.target.value})}/>
-              <button className="rounded bg-black px-4 py-2 text-white md:col-span-6">Add Deal</button>
+              <Button className="md:col-span-6">Add Deal</Button>
             </form>
 
             {dealsRaw === undefined ? (
@@ -479,8 +491,8 @@ export default function ProspectsPage() {
                         </select>
                         <input className="rounded border p-2 md:col-span-6" placeholder="Notes" value={edit.notes} onChange={e=>setEdit({...edit, notes:e.target.value})}/>
                         <div className="md:col-span-6 flex gap-2">
-                          <button type="button" className="rounded border px-3 py-1" onClick={()=>saveEdit(d.id)}>Save</button>
-                          <button type="button" className="rounded border px-3 py-1" onClick={()=>{setEditingId(null);}}>Cancel</button>
+                          <Button type="button" onClick={()=>saveEdit(d.id)}><Edit3 size={14} className="mr-1" />Save</Button>
+                          <Button type="button" variant="secondary" onClick={()=>setEditingId(null)}>Cancel</Button>
                         </div>
                       </div>
                     ) : (
@@ -501,9 +513,12 @@ export default function ProspectsPage() {
                           {d.notes ? <div className="text-xs text-gray-700 mt-1">{d.notes}</div> : null}
                         </div>
                         <div className="flex gap-2">
-                          <button type="button" className="rounded border px-2" onClick={()=>startEdit(d)}>Edit</button>
-                          <button type="button" className="rounded border px-2" onClick={()=>markWon(d.id)}>Won</button>
-                          <button type="button" className="rounded border px-2" onClick={()=>markLost(d.id)}>Lost</button>
+                          <Button variant="secondary" onClick={()=>startEdit(d)}>Edit</Button>
+                          <Button variant="primary" onClick={()=>markWon(d.id)}><CheckCircle2 size={14} className="mr-1" />Won</Button>
+                          <Button variant="secondary" onClick={()=>markLost(d.id)}><XCircle size={14} className="mr-1" />Lost</Button>
+                          <button className="p-2 rounded hover:bg-red-50 text-red-600" title="Delete deal" onClick={()=>deleteDeal(d.id)}>
+                            <Trash size={16} />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -525,7 +540,7 @@ export default function ProspectsPage() {
             <input className="w-full rounded border p-2" type="datetime-local" value={aForm.ends_at} onChange={e=>setAForm({...aForm, ends_at:e.target.value})}/>
             <input className="w-full rounded border p-2" placeholder="Location" value={aForm.location} onChange={e=>setAForm({...aForm, location:e.target.value})}/>
             <input className="w-full rounded border p-2" placeholder="Notes" value={aForm.notes} onChange={e=>setAForm({...aForm, notes:e.target.value})}/>
-            <button className="rounded bg-black px-4 py-2 text-white">Create Appointment</button>
+            <Button>Create Appointment</Button>
           </form>
 
           {/* Appointments List */}
@@ -541,12 +556,18 @@ export default function ProspectsPage() {
               <ul className="space-y-2 max-h-64 overflow-auto">
                 {appts.map(a => (
                   <li key={a.id} className="rounded border p-2">
-                    <div className="font-medium">{a.title}</div>
-                    <div className="text-xs text-gray-600">
-                      {fmt(a.starts_at)} — {fmt(a.ends_at)}
-                      {a.location ? ` • ${a.location}` : ''}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{a.title}</div>
+                        <div className="text-xs text-gray-600">
+                          {fmt(a.starts_at)} — {fmt(a.ends_at)} {a.location ? ` • ${a.location}` : ''}
+                        </div>
+                        {a.notes ? <div className="text-sm mt-1">{a.notes}</div> : null}
+                      </div>
+                      <button className="p-2 rounded hover:bg-red-50 text-red-600" title="Delete appointment" onClick={()=>deleteAppointment(a.id)}>
+                        <Trash size={16} />
+                      </button>
                     </div>
-                    {a.notes ? <div className="text-sm mt-1">{a.notes}</div> : null}
                   </li>
                 ))}
               </ul>
@@ -566,10 +587,17 @@ export default function ProspectsPage() {
               <ul className="space-y-2 max-h-64 overflow-auto">
                 {interactions.map(i => (
                   <li key={i.id} className="rounded border p-2">
-                    <div className="text-xs text-gray-600">
-                      {i.type.toUpperCase()} • {fmt(i.created_at)} {i.due_at ? `• due ${fmt(i.due_at)}` : ''}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs text-gray-600">
+                          {i.type.toUpperCase()} • {fmt(i.created_at)} {i.due_at ? `• due ${fmt(i.due_at)}` : ''}
+                        </div>
+                        <div className="text-sm">{i.summary ?? ''}</div>
+                      </div>
+                      <button className="p-2 rounded hover:bg-red-50 text-red-600" title="Delete interaction" onClick={()=>deleteInteraction(i.id)}>
+                        <Trash size={16} />
+                      </button>
                     </div>
-                    <div className="text-sm">{i.summary ?? ''}</div>
                   </li>
                 ))}
               </ul>
@@ -580,6 +608,3 @@ export default function ProspectsPage() {
     </div>
   );
 }
-
-
-

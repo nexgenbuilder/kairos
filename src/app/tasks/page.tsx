@@ -1,46 +1,67 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { useState } from 'react';
-import type { Task } from '@/types';
+import { Button } from '@/components/ui/Button';
+import { Trash } from 'lucide-react';
 
+type Task = {
+  id: string;
+  title: string;
+  description: string | null;
+  category_id: string | null;
+  category_name?: string | null;
+  priority: 'low' | 'medium' | 'high';
+  status: 'inactive' | 'active' | 'completed';
+  created_at: string;
+  activated_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+};
 type Category = { id: string; name: string };
 
-const fetcher = (u: string) => fetch(u).then(r => r.json());
+const fetcher = async (u: string) => {
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(await r.text().catch(() => 'Request failed'));
+  const json = await r.json();
+  if (Array.isArray(json)) return json;
+  if (Array.isArray((json as any)?.data)) return (json as any).data;
+  if (Array.isArray((json as any)?.rows)) return (json as any).rows;
+  return [];
+};
 
 export default function TasksPage() {
-  const { data, mutate, isLoading } = useSWR<Task[]>('/api/tasks', fetcher);
-  const { data: categories, mutate: mutateCats } = useSWR<Category[]>('/api/task-categories', fetcher);
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    category_id: '',
-    priority: 'medium' as Task['priority'],
-    status: 'inactive' as Task['status'],
-  });
+  const swrOpts = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 800 };
+  const { data: tasks, mutate: refreshTasks } = useSWR<Task[]>('/api/tasks', fetcher, swrOpts);
+  const { data: cats, mutate: refreshCats } = useSWR<Category[]>('/api/task-categories', fetcher, swrOpts);
 
+  const [newTask, setNewTask] = useState({ title: '', description: '', category_id: '', priority: 'medium' as Task['priority'] });
   const [catName, setCatName] = useState('');
 
-  async function addTask(e: React.FormEvent) {
+  // Group by status
+  const inactive  = useMemo(() => (tasks ?? []).filter(t => t.status === 'inactive'), [tasks]);
+  const active    = useMemo(() => (tasks ?? []).filter(t => t.status === 'active'),   [tasks]);
+  const completed = useMemo(() => (tasks ?? []).filter(t => t.status === 'completed'),[tasks]);
+
+  async function createTask(e: React.FormEvent) {
     e.preventDefault();
+    const payload = {
+      title: newTask.title,
+      description: newTask.description || null,
+      category_id: newTask.category_id || null,
+      priority: newTask.priority,
+    };
     const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: form.title.trim(),
-        description: form.description || null,
-        category_id: form.category_id || null,
-        priority: form.priority,
-        status: form.status, // API accepts status or status_select
-      }),
+      body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      setForm({ title: '', description: '', category_id: '', priority: 'medium', status: 'inactive' });
-      mutate();
-    } else {
-      const err = await res.json().catch(() => null);
-      alert(`Save failed${err?.error ? ': ' + err.error : ''}`);
+    if (!res.ok) {
+      alert('Create failed: ' + (await res.text().catch(() => '')));
+      return;
     }
+    setNewTask({ title: '', description: '', category_id: '', priority: 'medium' });
+    refreshTasks();
   }
 
   async function addCategory(e: React.FormEvent) {
@@ -52,174 +73,138 @@ export default function TasksPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
-    if (res.ok) {
-      setCatName('');
-      mutateCats();
-    } else {
-      const msg = await res.text().catch(() => '');
-      alert('Category failed: ' + msg);
-    }
-  }
-
-  async function setStatus(id: string, status: Task['status']) {
-    const prev = data || [];
-    mutate(
-      prev.map(t => (t.id === id ? { ...t, status } : t)),
-      false
-    );
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
     if (!res.ok) {
-      const msg = await res.text().catch(() => '');
-      mutate(); // revert
-      alert(`Update failed: ${res.status} ${msg}`);
-    } else {
-      mutate(); // refetch to get authoritative timestamps
+      alert('Category failed: ' + (await res.text().catch(() => '')));
+      return;
     }
+    setCatName('');
+    refreshCats();
   }
-  
 
-  const cap = (s?: string | null) => (s ? s[0].toUpperCase() + s.slice(1) : '');
+  async function updateStatus(id: string, status: Task['status']) {
+    await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    refreshTasks();
+  }
 
-  const StatusBadge = ({ s }: { s?: Task['status'] }) => {
-    const cls =
-      s === 'completed'
-        ? 'bg-green-100 text-green-800'
-        : s === 'active'
-        ? 'bg-blue-100 text-blue-800'
-        : 'bg-gray-100 text-gray-800';
-    return <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>{cap(s)}</span>;
-  };
+  async function updatePriority(id: string, priority: Task['priority']) {
+    await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority }) });
+    refreshTasks();
+  }
 
-  const ActionButtons = ({ id }: { id: string }) => (
-    <div className="flex gap-2">
-      <button
-        type="button"
-        onClick={() => setStatus(id, 'inactive')}
-        className="rounded border px-2 py-1 text-xs"
-        title="Mark Inactive"
-      >
-        Inactive
-      </button>
-      <button
-        type="button"
-        onClick={() => setStatus(id, 'active')}
-        className="rounded border px-2 py-1 text-xs"
-        title="Mark Active"
-      >
-        Active
-      </button>
-      <button
-        type="button"
-        onClick={() => setStatus(id, 'completed')}
-        className="rounded border px-2 py-1 text-xs"
-        title="Mark Completed"
-      >
-        Complete
-      </button>
-    </div>
-  );
+  async function deleteTask(id: string) {
+    if (!confirm('Delete this task?')) return;
+    const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    if (res.ok) refreshTasks();
+  }
+
+  function Lane({ title, items }: { title: string; items: Task[] }) {
+    return (
+      <div className="rounded-xl border bg-white p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">{title}</h2>
+          <span className="text-xs text-gray-500">{items.length}</span>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="text-sm text-gray-500">Nothing here</div>
+        ) : (
+          <ul className="space-y-2">
+            {items.map(t => (
+              <li key={t.id} className="group rounded-lg border p-2 hover:shadow-sm transition">
+                {/* Header row */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{t.title}</div>
+                    {t.description ? (
+                      <div
+                        className="text-xs text-gray-600 overflow-hidden max-h-5 group-hover:max-h-24 transition-all"
+                        title={t.description || ''}
+                      >
+                        {t.description}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {t.category_name ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 whitespace-nowrap">{t.category_name}</span>
+                    ) : null}
+                    <button
+                      className="p-1 rounded hover:bg-red-50 text-red-600"
+                      title="Delete task"
+                      onClick={() => deleteTask(t.id)}
+                    >
+                      <Trash size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <select
+                    className="h-8 w-full rounded border px-2 text-xs"
+                    value={t.status}
+                    onChange={e => updateStatus(t.id, e.currentTarget.value as Task['status'])}
+                  >
+                    <option value="inactive">inactive</option>
+                    <option value="active">active</option>
+                    <option value="completed">completed</option>
+                  </select>
+                  <select
+                    className="h-8 w-full rounded border px-2 text-xs"
+                    value={t.priority}
+                    onChange={e => updatePriority(t.id, e.currentTarget.value as Task['priority'])}
+                  >
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Tasks</h1>
 
-      {/* Manage Categories */}
-      <form onSubmit={addCategory} className="flex gap-2 rounded-xl border bg-white p-4">
-        <input
-          className="rounded border p-2 flex-1"
-          placeholder="New category"
-          value={catName}
-          onChange={e => setCatName(e.target.value)}
-        />
-        <button className="rounded bg-black px-4 py-2 text-white">Add</button>
+      {/* Create Task (compact) */}
+      <form onSubmit={createTask} className="grid gap-2 rounded-xl border bg-white p-3 md:grid-cols-6">
+        <input className="rounded border p-2 md:col-span-2" placeholder="Title *"
+               value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} required />
+        <input className="rounded border p-2 md:col-span-2" placeholder="Description"
+               value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} />
+        <select className="rounded border p-2"
+                value={newTask.category_id}
+                onChange={e => setNewTask({ ...newTask, category_id: e.target.value })}>
+          <option value="">No category</option>
+          {(cats ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select className="rounded border p-2"
+                value={newTask.priority}
+                onChange={e => setNewTask({ ...newTask, priority: e.target.value as Task['priority'] })}>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <Button className="md:col-span-6" type="submit">Add Task</Button>
       </form>
 
-      {/* Create Task */}
-      <form onSubmit={addTask} className="grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-6">
-        <input
-          className="rounded border p-2 md:col-span-3"
-          placeholder="Title *"
-          value={form.title}
-          onChange={e => setForm({ ...form, title: e.target.value })}
-          required
-        />
-        <select
-          className="rounded border p-2"
-          value={form.category_id}
-          onChange={e => setForm({ ...form, category_id: e.target.value })}
-        >
-          <option value="">No Category</option>
-          {(categories ?? []).map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <select
-          className="rounded border p-2"
-          value={form.priority}
-          onChange={e => setForm({ ...form, priority: e.target.value as any })}
-        >
-          <option value="low">Priority: Low</option>
-          <option value="medium">Priority: Medium</option>
-          <option value="high">Priority: High</option>
-        </select>
-        <select
-          className="rounded border p-2"
-          value={form.status}
-          onChange={e => setForm({ ...form, status: e.target.value as any })}
-        >
-          <option value="inactive">Inactive</option>
-          <option value="active">Active</option>
-          <option value="completed">Completed</option>
-        </select>
-        <input
-          className="rounded border p-2 md:col-span-6"
-          placeholder="Description"
-          value={form.description}
-          onChange={e => setForm({ ...form, description: e.target.value })}
-        />
-        <button className="rounded bg-black px-4 py-2 text-white md:col-span-6">Add Task</button>
+      {/* Create Category (compact) */}
+      <form onSubmit={addCategory} className="grid gap-2 rounded-xl border bg-white p-3 md:grid-cols-6">
+        <input className="rounded border p-2 md:col-span-5" placeholder="New category name"
+               value={catName} onChange={e => setCatName(e.target.value)} />
+        <Button type="submit">Add Category</Button>
       </form>
 
-      {/* List */}
-      <div className="rounded-xl border bg-white overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-gray-50">
-            <tr>
-              <th className="p-2 text-left">Title</th>
-              <th className="p-2">Category</th>
-              <th className="p-2">Priority</th>
-              <th className="p-2">Status</th>
-              <th className="p-2">Created</th>
-              <th className="p-2">Activated</th>
-              <th className="p-2">Completed</th>
-              <th className="p-2">Notes</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td className="p-3" colSpan={9}>Loading…</td></tr>
-            ) : (
-              (data ?? []).map(t => (
-                <tr key={t.id} className="border-b hover:bg-gray-50">
-                  <td className="p-2">{t.title}</td>
-                  <td className="p-2 text-center">{t.category_name ?? ''}</td>
-                  <td className="p-2 text-center">{cap(t.priority)}</td>
-                  <td className="p-2"><StatusBadge s={t.status} /></td>
-                  <td className="p-2">{t.created_at ? new Date(t.created_at).toLocaleString() : ''}</td>
-                  <td className="p-2">{t.activated_at ? new Date(t.activated_at).toLocaleString() : ''}</td>
-                  <td className="p-2">{t.completed_at ? new Date(t.completed_at).toLocaleString() : ''}</td>
-                  <td className="p-2">{t.description ?? ''}</td>
-                  <td className="p-2"><ActionButtons id={t.id} /></td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      {/* Board layout: 3 columns on md+ */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Lane title="Inactive"  items={inactive} />
+        <Lane title="Active"    items={active} />
+        <Lane title="Completed" items={completed} />
       </div>
     </div>
   );

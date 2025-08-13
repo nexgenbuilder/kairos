@@ -5,20 +5,26 @@ import { requireUser } from '@/lib/auth';
 
 export async function GET(req: Request) {
   const user = await requireUser(req);
-  const url = new URL(req.url);
-  const prospectId = url.searchParams.get('prospect_id');
+  const { searchParams } = new URL(req.url);
+  const pid = searchParams.get('prospect_id');
 
-  if (prospectId) {
+  if (pid) {
     const rows = await q`
-      SELECT * FROM deals
-      WHERE user_id=${user.id} AND prospect_id=${prospectId}
+      SELECT
+        id::text, prospect_id::text, name, amount, probability, stage,
+        expected_close_at, actual_amount, won_at, heat, created_at, updated_at, notes
+      FROM public.deals
+      WHERE user_id=${user.id} AND prospect_id=${pid}::uuid
       ORDER BY created_at DESC
     `;
     return NextResponse.json(rows);
   }
 
   const rows = await q`
-    SELECT * FROM deals
+    SELECT
+      id::text, prospect_id::text, name, amount, probability, stage,
+      expected_close_at, actual_amount, won_at, heat, created_at, updated_at, notes
+    FROM public.deals
     WHERE user_id=${user.id}
     ORDER BY created_at DESC
   `;
@@ -27,15 +33,33 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const user = await requireUser(req);
-  const b = await req.json();
+  const b = await req.json().catch(() => ({}));
+
+  const prospect_id = String(b.prospect_id || '').trim();
+  if (!prospect_id) return NextResponse.json({ error: 'prospect_id required' }, { status: 400 });
+
+  const name = String(b.name || '').trim();
+  if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
+
+  const amount = Number(b.amount || 0);
+  const probability = Math.max(0, Math.min(1, Number(b.probability || 0)));
+  const expected_close_at = b.expected_close_at ? new Date(b.expected_close_at).toISOString() : null;
+  const heat = (b.heat || 'warm') as 'cold' | 'warm' | 'hot' | 'on_hold';
+  const notes = b.notes ? String(b.notes) : null;
+  const stage = 'open';
 
   const rows = await q`
-    INSERT INTO deals (id, user_id, prospect_id, name, amount, actual_amount, probability, stage, expected_close_at, heat, notes, created_at, updated_at)
-    VALUES (gen_random_uuid(), ${user.id}, ${b.prospect_id ?? null}, ${b.name ?? null},
-            ${b.amount ?? 0}, ${b.actual_amount ?? null}, ${b.probability ?? 0},
-            ${b.stage ?? 'new'}, ${b.expected_close_at ?? null}, ${b.heat ?? null}, ${b.notes ?? null},
-            NOW(), NOW())
-    RETURNING *;
+    INSERT INTO public.deals
+      (user_id, prospect_id, name, amount, probability, stage,
+       expected_close_at, actual_amount, won_at, heat, created_at, updated_at, notes)
+    VALUES
+      (${user.id}, ${prospect_id}::uuid, ${name}, ${amount}, ${probability}, ${stage},
+       ${expected_close_at}, NULL, NULL, ${heat}, NOW(), NOW(), ${notes})
+    RETURNING
+      id::text, prospect_id::text, name, amount, probability, stage,
+      expected_close_at, actual_amount, won_at, heat, created_at, updated_at, notes
   `;
   return NextResponse.json(rows[0]);
 }
+
+

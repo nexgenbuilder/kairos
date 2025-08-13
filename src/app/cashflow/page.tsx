@@ -1,186 +1,168 @@
+
 'use client';
 
 import useSWR from 'swr';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
 
-type CashSummary = {
-  revenue: number;
-  pipeline: number;
-};
-
-type MonthlyRow = {
-  month: string;      // ISO date from API (YYYY-MM-01)
-  revenue: number;
-  pipeline: number;
-};
-
-type APIResponse = {
-  summary: CashSummary;
-  monthly: MonthlyRow[];
-};
-
-type Transaction = {
+type Tx = {
   id: string;
+  type: 'income' | 'expense';
   amount: number;
-  description: string | null;
   occurred_at: string;
+  category: string | null;
+  description: string | null;
+  deal_id: string | null;
+  prospect_id: string | null;
 };
+type TxCat = { id: string; name: string };
 
 const fetcher = async (u: string) => {
   const r = await fetch(u);
   if (!r.ok) throw new Error(await r.text().catch(() => 'Request failed'));
-  return r.json();
+  const json = await r.json();
+  if (Array.isArray(json)) return json;
+  if (Array.isArray((json as any)?.data)) return (json as any).data;
+  if (Array.isArray((json as any)?.rows)) return (json as any).rows;
+  return [];
 };
-
-const money = (n: number | string | null | undefined) =>
-  `$${Number(n ?? 0).toFixed(2)}`;
+const fmt = (s: string) => new Date(s).toLocaleString();
 
 export default function CashflowPage() {
-  const { data, error, isLoading, mutate } = useSWR<APIResponse>('/api/cashflow', fetcher);
-  const { data: txs, mutate: mutateTx } = useSWR<Transaction[]>('/api/transactions', fetcher);
+  const swrOpts = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 800 };
+  const { data: txs, mutate: refreshTxs } = useSWR<Tx[]>('/api/transactions', fetcher, swrOpts);
+  const { data: cats, mutate: refreshCats } = useSWR<TxCat[]>('/api/tx-categories', fetcher, swrOpts);
 
-  const summary = data?.summary ?? { revenue: 0, pipeline: 0 };
-  const monthly = data?.monthly ?? [];
+  const [form, setForm] = useState({
+    type: 'expense' as 'income' | 'expense',
+    amount: '',
+    occurred_at: '',
+    category_id: '',
+    category_text: '',
+    description: '',
+  });
 
-  const [tForm, setTForm] = useState({ amount: '', description: '', occurred_at: '' });
+  const income = useMemo(() => (txs ?? []).filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0), [txs]);
+  const expense = useMemo(() => (txs ?? []).filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0), [txs]);
+  const net = income - expense;
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
+    const n = form.category_text.trim();
+    if (!n) return;
+    const res = await fetch('/api/tx-categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n }) });
+    if (!res.ok) {
+      alert('Category failed: ' + (await res.text().catch(() => '')));
+      return;
+    }
+    setForm(f => ({ ...f, category_text: '' }));
+    refreshCats();
+  }
 
   async function addTx(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount: Number(tForm.amount),
-        description: tForm.description || null,
-        occurred_at: tForm.occurred_at || undefined,
-      }),
-    });
-    if (res.ok) {
-      setTForm({ amount: '', description: '', occurred_at: '' });
-      await mutateTx();
-      await mutate();
-    } else {
-      const err = await res.text().catch(() => '');
-      alert('Save failed: ' + err);
+    const amount = Number(form.amount);
+    if (!amount || isNaN(amount)) return alert('Valid amount required');
+
+    // Resolve category name:
+    let category: string | null = null;
+    if (form.category_id) {
+      const found = (cats ?? []).find(c => c.id === form.category_id);
+      category = found?.name ?? null;
+    } else if (form.category_text.trim()) {
+      category = form.category_text.trim();
+    }
+
+    const payload = {
+      type: form.type,
+      amount,
+      occurred_at: form.occurred_at ? new Date(form.occurred_at).toISOString() : new Date().toISOString(),
+      description: form.description || null,
+      category,
+    };
+
+    const res = await fetch('/api/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) {
+      alert('Create failed: ' + (await res.text().catch(() => '')));
       return;
     }
+    setForm({ type: 'expense', amount: '', occurred_at: '', category_id: '', category_text: '', description: '' });
+    refreshTxs();
+  }
+
+  async function deleteTx(id: string) {
+    if (!confirm('Delete this transaction?')) return;
+    const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    if (res.ok) refreshTxs();
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <h1 className="text-2xl font-bold">Cashflow</h1>
 
-      {error ? (
-        <div className="rounded border bg-red-50 p-3 text-red-700">
-          Failed to load: {String(error.message || error)}
+      {/* Summary */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-sm text-gray-500">Income</div>
+          <div className="text-xl font-semibold text-green-700">${income.toFixed(2)}</div>
         </div>
-      ) : isLoading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
-      ) : (
-        <>
-          {/* Top KPIs */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border bg-white p-4">
-              <div className="text-xs text-gray-500">Total Revenue</div>
-              <div className="text-2xl font-semibold">{money(summary.revenue)}</div>
-            </div>
-            <div className="rounded-xl border bg-white p-4">
-              <div className="text-xs text-gray-500">Projected Pipeline</div>
-              <div className="text-2xl font-semibold">{money(summary.pipeline)}</div>
-            </div>
-          </div>
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-sm text-gray-500">Expense</div>
+          <div className="text-xl font-semibold text-red-700">-${expense.toFixed(2)}</div>
+        </div>
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-sm text-gray-500">Net</div>
+          <div className="text-xl font-semibold">{net >= 0 ? `$${net.toFixed(2)}` : `-$${Math.abs(net).toFixed(2)}`}</div>
+        </div>
+      </div>
 
-          {/* Add Transaction */}
-          <form onSubmit={addTx} className="grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-4">
-            <input
-              className="rounded border p-2"
-              type="number"
-              step="0.01"
-              placeholder="Amount"
-              value={tForm.amount}
-              onChange={e => setTForm({ ...tForm, amount: e.target.value })}
-              required
-            />
-            <input
-              className="rounded border p-2 md:col-span-2"
-              placeholder="Description"
-              value={tForm.description}
-              onChange={e => setTForm({ ...tForm, description: e.target.value })}
-            />
-            <input
-              className="rounded border p-2"
-              type="date"
-              value={tForm.occurred_at}
-              onChange={e => setTForm({ ...tForm, occurred_at: e.target.value })}
-            />
-            <button className="rounded bg-black px-4 py-2 text-white md:col-span-4">Add Transaction</button>
-          </form>
+      {/* Add Transaction */}
+      <form onSubmit={addTx} className="grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-6">
+        <select className="rounded border p-2" value={form.type} onChange={e => setForm({ ...form, type: e.target.value as any })}>
+          <option value="expense">expense</option>
+          <option value="income">income</option>
+        </select>
+        <input className="rounded border p-2" placeholder="Amount *" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+        <input className="rounded border p-2" type="datetime-local" value={form.occurred_at} onChange={e => setForm({ ...form, occurred_at: e.target.value })} />
+        <select className="rounded border p-2" value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })}>
+          <option value="">Choose category</option>
+          {(cats ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <input className="rounded border p-2" placeholder="Or new category…" value={form.category_text} onChange={e => setForm({ ...form, category_text: e.target.value })} />
+        <Button type="button" onClick={addCategory}>Add Category</Button>
 
-          {/* Transactions list */}
-          <div className="rounded-xl border bg-white overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-gray-50">
-                <tr>
-                  <th className="p-2 text-left">Date</th>
-                  <th className="p-2 text-right">Amount</th>
-                  <th className="p-2 text-left">Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txs?.length ? (
-                  txs.map(t => (
-                    <tr key={t.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2">{new Date(t.occurred_at).toLocaleDateString()}</td>
-                      <td className="p-2 text-right">{money(t.amount)}</td>
-                      <td className="p-2">{t.description ?? ''}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="p-3 text-gray-500" colSpan={3}>No transactions yet.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+        <input className="rounded border p-2 md:col-span-5" placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+        <Button className="md:col-span-1" type="submit">Add</Button>
+      </form>
 
-          {/* Monthly table */}
-          <div className="rounded-xl border bg-white overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-gray-50">
-                <tr>
-                  <th className="p-2 text-left">Month</th>
-                  <th className="p-2 text-right">Revenue</th>
-                  <th className="p-2 text-right">Projected Pipeline</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthly.length === 0 ? (
-                  <tr>
-                    <td className="p-3 text-gray-500" colSpan={3}>
-                      No data yet.
-                    </td>
-                  </tr>
-                ) : (
-                  monthly.map((m) => {
-                    const monthLabel = new Date(m.month).toLocaleDateString(undefined, {
-                      year: 'numeric',
-                      month: 'short',
-                    });
-                    return (
-                      <tr key={m.month} className="border-b hover:bg-gray-50">
-                        <td className="p-2">{monthLabel}</td>
-                        <td className="p-2 text-right">{money(m.revenue)}</td>
-                        <td className="p-2 text-right">{money(m.pipeline)}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      {/* Transactions list */}
+      <div className="rounded-xl border bg-white p-4">
+        <h2 className="font-semibold mb-2">Recent</h2>
+        {!txs || txs.length === 0 ? (
+          <div className="text-sm text-gray-500">No transactions yet.</div>
+        ) : (
+          <ul className="divide-y">
+            {txs.map(t => (
+              <li key={t.id} className="py-2 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm">
+                    <span className={`inline-block min-w-16 rounded px-2 py-0.5 text-xs mr-2 ${t.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {t.type}
+                    </span>
+                    <span className="font-semibold">{t.type === 'expense' ? '-' : '+'}${Number(t.amount).toFixed(2)}</span>
+                    {t.category ? <span className="ml-2 text-xs text-gray-600">#{t.category}</span> : null}
+                  </div>
+                  <div className="text-xs text-gray-600">{fmt(t.occurred_at)}{t.description ? ` • ${t.description}` : ''}</div>
+                </div>
+                <div>
+                  <Button variant="danger" onClick={() => deleteTx(t.id)}>Delete</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

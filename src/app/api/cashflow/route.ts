@@ -6,18 +6,18 @@ import { requireUser } from '@/lib/auth';
 export async function GET(req: Request) {
   const user = await requireUser(req);
 
-  // Example: total income/expense sums this month for the current user
   const rows = await q`
     SELECT
-      date_trunc('month', occurred_at) AS month,
-      sum(case when type='income' then amount else 0 end)::numeric(12,2) as income,
-      sum(case when type='expense' then amount else 0 end)::numeric(12,2) as expense
+      COALESCE(SUM(CASE WHEN type = 'income'  THEN amount ELSE 0 END), 0)::double precision AS income,
+      COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0)::double precision AS expense
     FROM public.transactions
-    WHERE user_id=${user.id}
-    GROUP BY 1
-    ORDER BY 1 DESC
-    LIMIT 12
+    WHERE user_id = ${user.id}
   `;
 
-  return NextResponse.json(rows);
+  const income = Number(rows[0]?.income || 0);
+  const expense = Number(rows[0]?.expense || 0);
+  const net = income - expense;
+
+  return NextResponse.json({ income, expense, net });
 }
+
